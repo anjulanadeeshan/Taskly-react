@@ -1,6 +1,7 @@
 export type CalendarEvent = {
   id: string
   summary?: string
+  description?: string
   htmlLink?: string
   start?: { dateTime?: string; date?: string }
   end?: { dateTime?: string; date?: string }
@@ -12,6 +13,8 @@ export type NewCalendarEventInput = {
   start: Date
   end: Date
 }
+
+const TASKLY_EVENT_MARKER = 'Created by Taskly'
 
 type GoogleApiErrorBody = {
   error?: {
@@ -136,11 +139,13 @@ export async function createCalendarEvent(
   const body = input.allDay
     ? {
         summary: input.summary,
+        description: TASKLY_EVENT_MARKER,
         start: { date: toLocalIsoDate(input.start) },
         end: { date: toLocalIsoDate(input.end) },
       }
     : {
         summary: input.summary,
+        description: TASKLY_EVENT_MARKER,
         start: { dateTime: input.start.toISOString(), timeZone: timezone },
         end: { dateTime: input.end.toISOString(), timeZone: timezone },
       }

@@ -322,6 +322,8 @@ type SpecialDay = {
   kind: SpecialDayKind
 }
 
+const TASKLY_EVENT_MARKER = 'Created by Taskly'
+
 const SPECIAL_DAYS_BY_DATE: Record<string, SpecialDay[]> = {
   '2026-01-01': [{ title: "New Year's Day", kind: 'new-year' }],
   '2026-01-03': [{ title: 'Duruthu Full Moon Poya Day', kind: 'poya' }],
@@ -357,6 +359,10 @@ function specialDayBadgeClass(kind: SpecialDayKind): string {
   if (kind === 'poya') return 'bg-violet-500/20 text-violet-200 border border-violet-500/40'
   if (kind === 'new-year') return 'bg-amber-500/20 text-amber-200 border border-amber-400/40'
   return 'bg-rose-500/20 text-rose-200 border border-rose-500/40'
+}
+
+function isTasklyCreatedEvent(event: CalendarEvent): boolean {
+  return typeof event.description === 'string' && event.description.includes(TASKLY_EVENT_MARKER)
 }
 
 function toLocalDateKey(date: Date): string {
@@ -700,12 +706,20 @@ function DashboardPage({
 }: DashboardPageProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [showSpecialHolidays, setShowSpecialHolidays] = useState(true)
+  const [showMyTasks, setShowMyTasks] = useState(true)
 
   const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1)
   const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1)
 
   const cells = buildMonthGrid(monthStart)
   const eventsByDay = groupEventsByDay(calendarEvents, monthStart, monthEnd)
+  const visibleEventsByDay = new Map<string, CalendarEvent[]>()
+
+  for (const [key, list] of eventsByDay.entries()) {
+    const filtered = list.filter((event) => showMyTasks || !isTasklyCreatedEvent(event))
+    if (filtered.length > 0) visibleEventsByDay.set(key, filtered)
+  }
 
   const handlePrevMonth = () => {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))
@@ -743,6 +757,31 @@ function DashboardPage({
     .sort((a, b) => a.start.getTime() - b.start.getTime())
     .slice(0, 8)
 
+  const projectDetails = [
+    {
+      name: 'Uni group software project',
+      status: 'Active',
+      progress: 65,
+      note: 'Next checkpoint: UI review and testing.',
+    },
+    {
+      name: 'Taskly dashboard',
+      status: 'In progress',
+      progress: 82,
+      note: 'Calendar sync and layout cleanup.',
+    },
+    {
+      name: 'Semester planning',
+      status: 'Pending',
+      progress: 28,
+      note: 'Add study milestones and deadlines.',
+    },
+  ]
+
+  const filterSpecialDays = (days: SpecialDay[]): SpecialDay[] => {
+    return showSpecialHolidays ? days : []
+  }
+
   return (
     <div className="space-y-4">
       <div className="grid gap-4 md:grid-cols-4">
@@ -778,11 +817,36 @@ function DashboardPage({
                 {monthStart.toLocaleString(undefined, { month: 'long', year: 'numeric' })}
               </div>
             </div>
-            {hasCalendarToken && !calendarLoading && !calendarError ? (
-              <div className="text-xs text-slate-600 dark:text-slate-400">
-                {calendarEvents.length} events
-              </div>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              {hasCalendarToken && !calendarLoading && !calendarError ? (
+                <div className="text-xs text-slate-600 dark:text-slate-400 mr-1">
+                  {calendarEvents.length} events
+                </div>
+              ) : null}
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400 mr-1">
+                Map filters
+              </span>
+              <button
+                onClick={() => setShowSpecialHolidays((value) => !value)}
+                className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-medium border transition-colors ${
+                  showSpecialHolidays
+                    ? 'bg-violet-500/20 text-violet-200 border-violet-500/40'
+                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:bg-slate-800'
+                }`}
+              >
+                Special days
+              </button>
+              <button
+                onClick={() => setShowMyTasks((value) => !value)}
+                className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-medium border transition-colors ${
+                  showMyTasks
+                    ? 'bg-blue-500/20 text-blue-200 border-blue-500/40'
+                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:bg-slate-800'
+                }`}
+              >
+                My tasks
+              </button>
+            </div>
           </div>
 
           {!isSignedIn ? (
@@ -828,8 +892,8 @@ function DashboardPage({
                 <div className="grid grid-cols-7 border-t border-l border-slate-300 dark:border-slate-700 rounded-b-2xl overflow-hidden bg-white dark:bg-slate-900">
                   {cells.map((cell) => {
                     const dayKey = toLocalDateKey(cell.date)
-                    const dayEvents = eventsByDay.get(dayKey) ?? []
-                    const specialDays = SPECIAL_DAYS_BY_DATE[dayKey] ?? []
+                    const dayEvents = visibleEventsByDay.get(dayKey) ?? []
+                    const specialDays = filterSpecialDays(SPECIAL_DAYS_BY_DATE[dayKey] ?? [])
                     const isToday = isSameLocalDay(cell.date, new Date())
                     const specialDaySlots = Math.min(2, specialDays.length)
                     const eventSlots = Math.max(0, 4 - specialDaySlots)
@@ -897,8 +961,8 @@ function DashboardPage({
           {selectedDate && (
             <DateDetailModal
               date={selectedDate}
-              events={eventsByDay.get(toLocalDateKey(selectedDate)) ?? []}
-              specialDays={SPECIAL_DAYS_BY_DATE[toLocalDateKey(selectedDate)] ?? []}
+              events={(eventsByDay.get(toLocalDateKey(selectedDate)) ?? []).filter((event) => showMyTasks || !isTasklyCreatedEvent(event))}
+              specialDays={filterSpecialDays(SPECIAL_DAYS_BY_DATE[toLocalDateKey(selectedDate)] ?? [])}
               canCreateEvent={isSignedIn && hasCalendarToken}
               onCreateEvent={onCreateEvent}
               onClose={handleCloseDateDetail}
@@ -906,42 +970,80 @@ function DashboardPage({
           )}
         </div>
 
-        <aside className="rounded-3xl border border-slate-300 bg-white dark:bg-slate-900/80 p-4 shadow-sm">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-1">Upcoming</h3>
-          <p className="text-[11px] text-slate-600 dark:text-slate-400 mb-3">
-            Your next events from Google Calendar.
-          </p>
+        <aside className="space-y-4">
+          <section className="rounded-3xl border border-slate-300 bg-white dark:bg-slate-900/80 p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-1">Upcoming Events</h3>
+            <p className="text-[11px] text-slate-600 dark:text-slate-400 mb-3">
+              Your next events from Google Calendar.
+            </p>
 
-          {!isSignedIn ? (
-            <p className="text-xs text-slate-600 dark:text-slate-400">Sign in to see upcoming events.</p>
-          ) : !hasCalendarToken ? (
-            <p className="text-xs text-slate-600 dark:text-slate-400">Connect Calendar to see upcoming events.</p>
-          ) : calendarLoading ? (
-            <p className="text-xs text-slate-600 dark:text-slate-400">Loading upcoming events…</p>
-          ) : calendarError ? (
-            <p className="text-xs text-rose-700 dark:text-rose-200">{calendarError}</p>
-          ) : upcomingEvents.length === 0 ? (
-            <p className="text-xs text-slate-600 dark:text-slate-400">No upcoming events for now.</p>
-          ) : (
+            {!isSignedIn ? (
+              <p className="text-xs text-slate-600 dark:text-slate-400">Sign in to see upcoming events.</p>
+            ) : !hasCalendarToken ? (
+              <p className="text-xs text-slate-600 dark:text-slate-400">Connect Calendar to see upcoming events.</p>
+            ) : calendarLoading ? (
+              <p className="text-xs text-slate-600 dark:text-slate-400">Loading upcoming events…</p>
+            ) : calendarError ? (
+              <p className="text-xs text-rose-700 dark:text-rose-200">{calendarError}</p>
+            ) : upcomingEvents.length === 0 ? (
+              <p className="text-xs text-slate-600 dark:text-slate-400">No upcoming events for now.</p>
+            ) : (
+              <ul className="space-y-2">
+                {upcomingEvents.map(({ event, start }) => (
+                  <li key={event.id} className="rounded-xl border border-slate-200 dark:border-slate-800 p-2.5 bg-slate-50/70 dark:bg-slate-900/40">
+                    <p className="text-[11px] font-semibold text-slate-900 dark:text-slate-100 truncate">
+                      {event.summary ?? '(No title)'}
+                    </p>
+                    <p className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5">
+                      {start.toLocaleString(undefined, {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="rounded-3xl border border-slate-300 bg-white dark:bg-slate-900/80 p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-1">Project Details</h3>
+            <p className="text-[11px] text-slate-600 dark:text-slate-400 mb-3">
+              Active work and planning items.
+            </p>
+
             <ul className="space-y-2">
-              {upcomingEvents.map(({ event, start }) => (
-                <li key={event.id} className="rounded-xl border border-slate-200 dark:border-slate-800 p-2.5 bg-slate-50/70 dark:bg-slate-900/40">
-                  <p className="text-[11px] font-semibold text-slate-900 dark:text-slate-100 truncate">
-                    {event.summary ?? '(No title)'}
-                  </p>
-                  <p className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5">
-                    {start.toLocaleString(undefined, {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </p>
+              {projectDetails.map((project) => (
+                <li key={project.name} className="rounded-xl border border-slate-200 dark:border-slate-800 p-3 bg-slate-50/70 dark:bg-slate-900/40">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold text-slate-900 dark:text-slate-100 truncate">
+                        {project.name}
+                      </p>
+                      <p className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5">
+                        {project.note}
+                      </p>
+                    </div>
+                    <span className="inline-flex rounded-full border border-slate-700 px-2 py-0.5 text-[10px] text-slate-300 bg-slate-950/70 shrink-0">
+                      {project.status}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="h-2 flex-1 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                      <div className="h-full rounded-full bg-blue-500" style={{ width: `${project.progress}%` }} />
+                    </div>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 w-8 text-right">
+                      {project.progress}%
+                    </span>
+                  </div>
                 </li>
               ))}
             </ul>
-          )}
+          </section>
         </aside>
       </div>
     </div>
