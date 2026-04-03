@@ -6,6 +6,13 @@ export type CalendarEvent = {
   end?: { dateTime?: string; date?: string }
 }
 
+export type NewCalendarEventInput = {
+  summary: string
+  allDay: boolean
+  start: Date
+  end: Date
+}
+
 type GoogleApiErrorBody = {
   error?: {
     code?: number
@@ -24,6 +31,38 @@ type CalendarQuery = {
   timeMin: Date
   timeMax: Date
   maxResults?: number
+}
+
+function toLocalIsoDate(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+async function parseApiError(response: Response, action: string): Promise<never> {
+  let details = ''
+  try {
+    const bodyText = await response.text()
+    if (bodyText) {
+      try {
+        const body = JSON.parse(bodyText) as GoogleApiErrorBody
+        const reason = body.error?.errors?.[0]?.reason
+        const message = body.error?.message ?? bodyText
+        details = reason ? `${reason}: ${message}` : message
+      } catch {
+        details = bodyText
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  throw new Error(
+    details
+      ? `Failed to ${action} (${response.status}) - ${details}`
+      : `Failed to ${action} (${response.status})`
+  )
 }
 
 async function fetchCalendarPage(params: {
@@ -48,28 +87,7 @@ async function fetchCalendarPage(params: {
   })
 
   if (!response.ok) {
-    let details = ''
-    try {
-      const bodyText = await response.text()
-      if (bodyText) {
-        try {
-          const body = JSON.parse(bodyText) as GoogleApiErrorBody
-          const reason = body.error?.errors?.[0]?.reason
-          const message = body.error?.message ?? bodyText
-          details = reason ? `${reason}: ${message}` : message
-        } catch {
-          details = bodyText
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    throw new Error(
-      details
-        ? `Failed to fetch calendar events (${response.status}) - ${details}`
-        : `Failed to fetch calendar events (${response.status})`
-    )
+    await parseApiError(response, 'fetch calendar events')
   }
 
   return (await response.json()) as GoogleCalendarEventsResponse
@@ -81,8 +99,8 @@ export async function getCalendarEvents(
 ): Promise<CalendarEvent[]> {
   const now = new Date()
 
-  const defaultTimeMin = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
-  const defaultTimeMax = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0)
+  const defaultTimeMin = new Date(now.getFullYear() - 1, 0, 1, 0, 0, 0, 0)        // Jan 1 last year
+  const defaultTimeMax = new Date(now.getFullYear() + 1, 11, 31, 23, 59, 59, 999) // Dec 31 next year
 
   const timeMin = query?.timeMin ?? defaultTimeMin
   const timeMax = query?.timeMax ?? defaultTimeMax
@@ -106,4 +124,39 @@ export async function getCalendarEvents(
   }
 
   return items
+}
+
+export async function createCalendarEvent(
+  accessToken: string,
+  input: NewCalendarEventInput
+): Promise<CalendarEvent> {
+  const url = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+  const body = input.allDay
+    ? {
+        summary: input.summary,
+        start: { date: toLocalIsoDate(input.start) },
+        end: { date: toLocalIsoDate(input.end) },
+      }
+    : {
+        summary: input.summary,
+        start: { dateTime: input.start.toISOString(), timeZone: timezone },
+        end: { dateTime: input.end.toISOString(), timeZone: timezone },
+      }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    await parseApiError(response, 'create calendar event')
+  }
+
+  return (await response.json()) as CalendarEvent
 }

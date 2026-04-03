@@ -22,4 +22,6 @@ body,
 body {
   margin: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: linear-gradient(160deg, #020617 0%, #0b1224 55%, #020617 100%);
+  color: #e2e8f0;
 }
