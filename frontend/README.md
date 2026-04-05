@@ -63,3 +63,32 @@ A modern, responsive web application built with React and Tailwind CSS that serv
 - Tablet-responsive grid layouts
 - Touch-friendly interface elements
 - Smooth transitions and animations
+
+## Netlify Hosting Setup
+
+This project is ready to deploy on Netlify.
+
+Files added for deployment:
+- netlify.toml (build and publish settings + SPA fallback)
+- public/_redirects (route fallback for client-side routing)
+
+### Option 1: Deploy from GitHub (recommended)
+1. Push this frontend folder to your Git repository.
+2. In Netlify, select Add new site -> Import an existing project.
+3. Choose your repository and set:
+  - Base directory: frontend (only if your repo root contains the frontend folder)
+  - Build command: npm run build
+  - Publish directory: dist
+4. Click Deploy site.
+
+### Option 2: Deploy with Netlify CLI
+1. Install CLI: npm install -g netlify-cli
+2. Login: netlify login
+3. In this frontend folder, run:
+  - netlify init
+  - netlify deploy --build
+4. For production:
+  - netlify deploy --prod --build
+
+### Why routing works on refresh
+React Router uses client-side routes (for example, /tasks). Netlify must always serve index.html for unknown paths. The redirect rules in netlify.toml and public/_redirects handle this.
